@@ -114,6 +114,19 @@ class WebFlowTests(unittest.TestCase):
         response = self.client.get("/admin")
         self.assertEqual(response.status_code, 302)
 
+    def test_admin_can_view_cinema_pulse_analytics(self):
+        response = self.client.get("/login")
+        with self.client.session_transaction() as session:
+            csrf_token = session["csrf_token"]
+        self.client.post("/login", data={"csrf_token": csrf_token, "email": "admin@example.com", "password": "Admin123!"})
+        dashboard = self.client.get("/admin")
+        analytics = self.client.get("/admin/analytics/1")
+        self.assertEqual(dashboard.status_code, 200)
+        self.assertIn(b"CINEMA PULSE", dashboard.data)
+        self.assertIn(b"Seat Pulse", dashboard.data)
+        self.assertEqual(analytics.status_code, 200)
+        self.assertEqual(analytics.get_json()["show"]["show_name"], "Evening Premiere")
+
     def _seat_id(self, seat_number):
         with self.application.app_context():
             from database import get_db

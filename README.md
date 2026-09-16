@@ -83,5 +83,11 @@ Useful endpoints include `/health`, `/api/shows/<show_id>/availability`, and
 `/api/bookings/<booking_id>` for the logged-in owner. Admin operations are
 protected by the backend role check, not only by hidden navigation.
 
+The admin dashboard includes **Cinema Pulse**, which uses real database data to
+show confirmed audience, occupancy, revenue, held seats, tier popularity, a
+show-to-show comparison, and a Seat Pulse map. Green seats are available,
+amber seats are held for payment, and red seats are booked. The analytics JSON
+is available to admins at `/admin/analytics/<show_id>`.
+
 The pricing logic remains reusable in `ticket_pricing.py`; database state and
 booking transactions are handled in `app.py` and `database.py`.

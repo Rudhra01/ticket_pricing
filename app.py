@@ -396,7 +396,17 @@ def create_app(test_config=None) -> Flask:
         db = get_db()
         stats = {"users": db.execute("SELECT COUNT(*) FROM users WHERE role='customer'").fetchone()[0], "shows": db.execute("SELECT COUNT(*) FROM shows").fetchone()[0], "bookings": db.execute("SELECT COUNT(*) FROM bookings").fetchone()[0], "revenue": db.execute("SELECT COALESCE(SUM(total_amount), 0) FROM bookings WHERE status='CONFIRMED'").fetchone()[0]}
         shows = db.execute("SELECT * FROM shows ORDER BY starts_at").fetchall()
-        return render_template("admin.html", stats=stats, shows=shows)
+        selected_show_id = request.args.get("show_id", type=int) or (shows[0]["id"] if shows else None)
+        analytics = build_show_analytics(db, selected_show_id) if selected_show_id else empty_analytics()
+        return render_template("admin.html", stats=stats, shows=shows, analytics=analytics, selected_show_id=selected_show_id)
+
+    @app.route("/admin/analytics/<int:show_id>")
+    @admin_required
+    def admin_analytics(show_id):
+        analytics = build_show_analytics(get_db(), show_id)
+        if not analytics["show"]:
+            return jsonify({"error": "Show not found"}), 404
+        return jsonify(analytics)
 
     @app.route("/admin/bookings")
     @admin_required
@@ -435,6 +445,67 @@ def create_app(test_config=None) -> Flask:
 
 def utc_now():
     return datetime.now(timezone.utc).isoformat()
+
+
+def empty_analytics():
+    return {
+        "show": None,
+        "audience": 0,
+        "revenue": "0.00",
+        "occupancy": 0,
+        "total_seats": 0,
+        "booked_seats": 0,
+        "held_seats": 0,
+        "tiers": [],
+        "seats": [],
+        "comparison": [],
+    }
+
+
+def build_show_analytics(db, show_id):
+    show = db.execute("SELECT id, show_name, cinema_name, starts_at FROM shows WHERE id=?", (show_id,)).fetchone()
+    if not show:
+        return empty_analytics()
+
+    seat_counts = db.execute(
+        "SELECT COUNT(*) AS total, SUM(status='booked') AS booked, SUM(status='held') AS held FROM seats WHERE show_id=?",
+        (show_id,),
+    ).fetchone()
+    booking_stats = db.execute(
+        "SELECT COALESCE(SUM(quantity), 0) AS audience, COALESCE(SUM(total_amount), 0) AS revenue FROM bookings WHERE show_id=? AND status='CONFIRMED'",
+        (show_id,),
+    ).fetchone()
+    total_seats = seat_counts["total"] or 0
+    booked_seats = seat_counts["booked"] or 0
+    tiers = db.execute(
+        "SELECT t.name, COUNT(s.id) AS capacity, SUM(s.status='booked') AS booked, COALESCE(SUM(CASE WHEN b.status='CONFIRMED' THEN i.price ELSE 0 END), 0) AS revenue "
+        "FROM ticket_tiers t LEFT JOIN seats s ON s.tier_id=t.id LEFT JOIN booking_items i ON i.seat_id=s.id LEFT JOIN bookings b ON b.id=i.booking_id "
+        "WHERE t.show_id=? GROUP BY t.id ORDER BY t.price",
+        (show_id,),
+    ).fetchall()
+    seats = db.execute(
+        "SELECT seat_number, status, t.name AS tier FROM seats s JOIN ticket_tiers t ON t.id=s.tier_id WHERE s.show_id=? ORDER BY t.price, s.seat_number",
+        (show_id,),
+    ).fetchall()
+    comparison = db.execute(
+        "SELECT s.id, s.show_name, COUNT(se.id) AS capacity, SUM(se.status='booked') AS booked "
+        "FROM shows s LEFT JOIN seats se ON se.show_id=s.id GROUP BY s.id ORDER BY s.starts_at",
+    ).fetchall()
+    return {
+        "show": dict(show),
+        "audience": booking_stats["audience"],
+        "revenue": f"{Decimal(str(booking_stats['revenue'] or 0)):.2f}",
+        "occupancy": round((booked_seats / total_seats) * 100) if total_seats else 0,
+        "total_seats": total_seats,
+        "booked_seats": booked_seats,
+        "held_seats": seat_counts["held"] or 0,
+        "tiers": [
+            {"name": row["name"], "capacity": row["capacity"] or 0, "booked": row["booked"] or 0, "occupancy": round(((row["booked"] or 0) / row["capacity"]) * 100) if row["capacity"] else 0, "revenue": f"{Decimal(str(row['revenue'] or 0)):.2f}"}
+            for row in tiers
+        ],
+        "seats": [dict(row) for row in seats],
+        "comparison": [{"name": row["show_name"], "capacity": row["capacity"] or 0, "booked": row["booked"] or 0, "occupancy": round(((row["booked"] or 0) / row["capacity"]) * 100) if row["capacity"] else 0} for row in comparison],
+    }
 
 
 def calculate_selected_bill(show, seats):

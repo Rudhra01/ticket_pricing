@@ -1,0 +1,26 @@
+.pulse-head { display:flex; justify-content:space-between; gap:24px; align-items:end; margin:48px 0 20px; }
+.pulse-head h2 { margin:6px 0; }
+.pulse-head select { min-width:220px; padding:11px; border:1px solid var(--line); background:#fff; }
+.pulse-grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:12px; }
+.pulse-card { display:grid; gap:8px; }
+.pulse-card strong { font-size:1.8rem; }
+.pulse-card small { color:var(--muted); font:0.78rem Arial,sans-serif; }
+.meter, .bar-track { height:9px; background:#e8e5dc; border-radius:20px; overflow:hidden; }
+.meter span, .bar-track span { display:block; height:100%; background:var(--accent); border-radius:20px; }
+.analytics-columns { display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-top:18px; }
+.analytics-panel { background:var(--card); border:1px solid var(--line); border-radius:6px; padding:24px; margin-top:18px; }
+.analytics-panel h2 { margin:0 0 6px; }
+.bar-row { display:grid; grid-template-columns:150px 1fr 42px; align-items:center; gap:12px; margin:22px 0; font-family:Arial,sans-serif; }
+.bar-row div:first-child { display:grid; gap:4px; }
+.bar-row span { color:var(--muted); font-size:.75rem; }
+.bar-row b { font-size:.8rem; text-align:right; }
+.bar-row.compact { grid-template-columns:150px 1fr 42px; }
+.seat-pulse { display:flex; flex-wrap:wrap; gap:8px; margin-top:20px; }
+.pulse-seat { display:grid; place-items:center; width:42px; height:34px; border-radius:4px; color:#fff; font:700 .7rem Arial,sans-serif; }
+.pulse-seat.available, .legend i.available { background:var(--green); }
+.pulse-seat.held, .legend i.held { background:#d79b3f; }
+.pulse-seat.booked, .legend i.booked { background:#a9433e; }
+.legend { display:flex; gap:18px; margin-top:20px; color:var(--muted); font: .78rem Arial,sans-serif; }
+.legend span { display:flex; align-items:center; gap:6px; }
+.legend i { width:10px; height:10px; border-radius:50%; }
+@media (max-width:720px) { .pulse-head, .analytics-columns { display:block; } .pulse-head form { margin-top:20px; } .pulse-grid { grid-template-columns:repeat(2, 1fr); } .bar-row, .bar-row.compact { grid-template-columns:110px 1fr 38px; gap:8px; } }
