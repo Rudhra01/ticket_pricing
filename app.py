@@ -95,15 +95,18 @@ def create_app(test_config=None) -> Flask:
     def index():
         search = request.args.get("q", "").strip()
         date = request.args.get("date", "").strip()
-        query = "SELECT * FROM shows WHERE starts_at > ?"
-        params = [utc_now()]
+        query = "SELECT * FROM shows"
+        filters = []
+        params = []
         if search:
-            query += " AND (show_name LIKE ? OR cinema_name LIKE ?)"
+            filters.append("(show_name LIKE ? OR cinema_name LIKE ?)")
             params.extend([f"%{search}%", f"%{search}%"])
         if date:
-            query += " AND starts_at LIKE ?"
+            filters.append("starts_at LIKE ?")
             params.append(f"{date}%")
-        query += " ORDER BY starts_at LIMIT 50"
+        if filters:
+            query += " WHERE " + " AND ".join(filters)
+        query += " ORDER BY starts_at"
         shows = get_db().execute(query, params).fetchall()
         return render_template("index.html", shows=shows, search=search, date=date)
 
