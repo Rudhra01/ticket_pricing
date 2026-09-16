@@ -20,8 +20,9 @@ cp .env.example .env  # optional; export the values in your shell
 python app.py
 ```
 
-Open `http://127.0.0.1:5000`. The first run creates `ticket_pricing.db` and
-seeds one show with Silver, Gold, and Recliner seats.
+Open `http://127.0.0.1:5000`. The server listens on all interfaces so it also
+works through a Codespaces forwarded port. The first run creates
+`ticket_pricing.db` and seeds one show with Silver, Gold, and Recliner seats.
 
 The development admin account is `admin@example.com` with password
 `Admin123!`. Change it before any shared or deployed use.
@@ -37,6 +38,11 @@ Pricing is calculated in this order:
 Prices are calculated with `Decimal` and rounded to two decimal places. The
 program rejects negative prices, discounts, fees, and availability values, as
 well as invalid discount and GST percentages.
+
+Demand pricing uses current held and booked seats. Prices stay at the base rate
+below 50% occupancy, increase by 10% from 50% through 79%, and increase by 20%
+at 80% occupancy or higher. The adjustment is applied both on the show page
+and when the booking is created.
 
 ## Debugging
 
@@ -55,6 +61,11 @@ python -m unittest discover -v
 For a CLI input problem, check that prices, quantities, availability, and
 percentages are entered as numbers. The program prints a booking error instead
 of creating a bill when an input is invalid.
+
+If a forwarded Codespaces URL does not load, authenticate with GitHub and make
+sure the app is running with `python app.py`. The default host is `0.0.0.0`
+and the default port is `5000`; these can be changed with `FLASK_HOST` and
+`PORT`.
 ## Test and Debug
 
 ```bash

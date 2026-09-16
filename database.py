@@ -47,10 +47,14 @@ def init_db(path):
 
 
 def seed_db(db):
-    if db.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0:
+    if db.execute("SELECT COUNT(*) FROM users WHERE role='admin'").fetchone()[0] == 0:
         from werkzeug.security import generate_password_hash
 
-        db.execute("INSERT INTO users (name, email, password_hash, role, verified) VALUES (?, ?, ?, 'admin', 1)", ("Administrator", "admin@example.com", generate_password_hash("Admin123!")))
+        admin = db.execute("SELECT id FROM users WHERE email = ?", ("admin@example.com",)).fetchone()
+        if admin:
+            db.execute("UPDATE users SET role='admin', verified=1 WHERE id=?", (admin[0],))
+        else:
+            db.execute("INSERT INTO users (name, email, password_hash, role, verified) VALUES (?, ?, ?, 'admin', 1)", ("Administrator", "admin@example.com", generate_password_hash("Admin123!")))
     if db.execute("SELECT COUNT(*) FROM shows").fetchone()[0] == 0:
         show = db.execute("INSERT INTO shows (cinema_name, show_name, starts_at, festival_discount, member_percent, member_discount_cap, convenience_fee, gst_percent) VALUES ('City Cinema', 'Evening Premiere', '2026-12-20T18:30:00+00:00', 20, 10, 50, 12.50, 18)").lastrowid
         for name, price, count in (("Silver", 100, 12), ("Gold", 150, 8), ("Recliner", 250, 4)):

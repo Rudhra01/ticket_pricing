@@ -245,9 +245,10 @@ def create_app(test_config=None) -> Flask:
         if not show:
             return render_template("error.html", message="Show not found."), 404
         release_expired_holds(db)
-        tiers = db.execute("SELECT * FROM ticket_tiers WHERE show_id = ? ORDER BY price", (show_id,)).fetchall()
-        seats = db.execute("SELECT id, seat_number, tier_id, status FROM seats WHERE show_id = ? ORDER BY seat_number", (show_id,)).fetchall()
-        return render_template("show_detail.html", show=show, tiers=tiers, seats=seats)
+        multiplier = demand_multiplier(db, show_id)
+        tiers = [{**dict(tier), "price": dynamic_price(tier["price"], multiplier)} for tier in db.execute("SELECT * FROM ticket_tiers WHERE show_id = ? ORDER BY price", (show_id,)).fetchall()]
+        seats = db.execute("SELECT s.id, s.seat_number, s.tier_id, s.status, t.price FROM seats s JOIN ticket_tiers t ON t.id=s.tier_id WHERE s.show_id = ? ORDER BY s.seat_number", (show_id,)).fetchall()
+        return render_template("show_detail.html", show=show, tiers=tiers, seats=seats, demand_multiplier=multiplier)
 
     @app.route("/api/shows/<int:show_id>/availability")
     def availability(show_id):
@@ -280,6 +281,8 @@ def create_app(test_config=None) -> Flask:
             ).fetchall()
             if len(seats) != len(set(seat_ids)):
                 raise ValueError("One or more selected seats are no longer available.")
+            multiplier = demand_multiplier(db, show_id)
+            seats = [{**dict(seat), "price": str(dynamic_price(seat["price"], multiplier))} for seat in seats]
             show = db.execute("SELECT * FROM shows WHERE id=?", (show_id,)).fetchone()
             bill, tier_lines = calculate_selected_bill(show, seats)
             reference = "TP-" + secrets.token_hex(5).upper()
@@ -462,6 +465,22 @@ def empty_analytics():
     }
 
 
+def demand_multiplier(db, show_id):
+    counts = db.execute("SELECT COUNT(*) AS total, SUM(status IN ('booked', 'held')) AS committed FROM seats WHERE show_id=?", (show_id,)).fetchone()
+    total = counts["total"] or 0
+    committed = counts["committed"] or 0
+    occupancy = (committed / total) if total else 0
+    if occupancy >= 0.8:
+        return Decimal("1.20")
+    if occupancy >= 0.5:
+        return Decimal("1.10")
+    return Decimal("1.00")
+
+
+def dynamic_price(price, multiplier):
+    return (Decimal(str(price)) * multiplier).quantize(Decimal("0.01"))
+
+
 def build_show_analytics(db, show_id):
     show = db.execute("SELECT id, show_name, cinema_name, starts_at FROM shows WHERE id=?", (show_id,)).fetchone()
     if not show:
@@ -579,4 +598,8 @@ app = create_app()
 
 
 if __name__ == "__main__":
-    app.run(debug=os.environ.get("FLASK_DEBUG", "0") == "1")
+    app.run(
+        host=os.environ.get("FLASK_HOST", "0.0.0.0"),
+        port=int(os.environ.get("PORT", "5000")),
+        debug=os.environ.get("FLASK_DEBUG", "0") == "1",
+    )

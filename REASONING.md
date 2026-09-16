@@ -12,3 +12,6 @@
 - Seats are held before payment and changed to booked only after the payment result is verified. A database write lock and availability query prevent two successful requests from taking the same seat.
 - The payment implementation is deliberately a development adapter. It provides complete success/failure/cancel state transitions without pretending to verify a real provider signature; a real provider webhook must replace it before production payments.
 - Verification and password reset links are shown in development instead of silently pretending that email was sent.
+- Admin seeding checks for an admin role instead of assuming that an empty user table exists, so a partially initialized local database can recover its development admin account.
+- The Flask entry point binds to `0.0.0.0` by default because Codespaces forwards ports through the container network rather than only through loopback.
+- Demand pricing is calculated from held and booked seat occupancy, with 0%, 10%, and 20% tiers, and the adjusted amount is persisted with each booking so the paid price remains stable after demand changes.
