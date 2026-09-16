@@ -1,6 +1,7 @@
 import os
 import secrets
 import sqlite3
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from functools import wraps
@@ -279,15 +280,8 @@ def create_app(test_config=None) -> Flask:
             ).fetchall()
             if len(seats) != len(set(seat_ids)):
                 raise ValueError("One or more selected seats are no longer available.")
-            tier = seats[0]["tier_name"]
-            if any(seat["tier_name"] != tier for seat in seats):
-                raise ValueError("Please select seats from one ticket tier.")
             show = db.execute("SELECT * FROM shows WHERE id=?", (show_id,)).fetchone()
-            pricing_show = CinemaShow(show["cinema_name"], show["show_name"], {tier: TicketTier(tier, seats[0]["price"], len(seats))})
-            bill = calculate_bill(
-                pricing_show, tier, len(seats), show["festival_discount"], show["member_percent"],
-                show["member_discount_cap"], show["convenience_fee"], show["gst_percent"],
-            )
+            bill, tier_lines = calculate_selected_bill(show, seats)
             reference = "TP-" + secrets.token_hex(5).upper()
             cursor = db.execute(
                 "INSERT INTO bookings (reference, user_id, show_id, tier_id, quantity, status, total_amount, hold_expires_at) VALUES (?, ?, ?, ?, ?, 'PENDING', ?, ?)",
@@ -300,6 +294,7 @@ def create_app(test_config=None) -> Flask:
             db.execute("INSERT INTO passengers (booking_id, name, email) VALUES (?, ?, ?)", (booking_id, passenger_name, passenger_email))
             db.execute("INSERT INTO payments (booking_id, provider, status, amount) VALUES (?, 'mock', 'pending', ?)", (booking_id, str(bill.total)))
             db.commit()
+            session[f"bill_{booking_id}"] = {"ticket_lines": tier_lines, "ticket_total": str(bill.ticket_total), "festival_discount": str(bill.festival_discount), "member_discount": str(bill.member_discount), "discounted_ticket_total": str(bill.discounted_ticket_total), "convenience_fee": str(bill.convenience_fee), "taxable_total": str(bill.taxable_total), "gst": str(bill.gst), "total": str(bill.total)}
             return redirect(url_for("payment", booking_id=booking_id))
         except (ValueError, sqlite3.Error) as error:
             db.rollback()
@@ -312,7 +307,8 @@ def create_app(test_config=None) -> Flask:
         booking = get_owned_booking(booking_id)
         if not booking:
             return render_template("error.html", message="Booking not found."), 404
-        return render_template("payment.html", booking=booking)
+        bill = session.get(f"bill_{booking_id}") or booking_bill_from_database(booking)
+        return render_template("payment.html", booking=booking, bill=bill)
 
     @app.route("/payment/<int:booking_id>/<result>")
     @login_required
@@ -439,6 +435,51 @@ def create_app(test_config=None) -> Flask:
 
 def utc_now():
     return datetime.now(timezone.utc).isoformat()
+
+
+def calculate_selected_bill(show, seats):
+    """Price a basket that may contain seats from several ticket tiers."""
+    tier_totals = defaultdict(lambda: {"quantity": 0, "total": Decimal("0.00")})
+    ticket_total = Decimal("0.00")
+    for seat in seats:
+        price = Decimal(str(seat["price"])).quantize(Decimal("0.01"))
+        tier_totals[seat["tier_name"]]["quantity"] += 1
+        tier_totals[seat["tier_name"]]["total"] += price
+        ticket_total += price
+
+    # Use the existing pure pricing function for basket-wide discount, fee,
+    # GST, and rounding rules. The synthetic tier represents the full basket.
+    pricing_show = CinemaShow(
+        show["cinema_name"],
+        show["show_name"],
+        {"Selected seats": TicketTier("Selected seats", ticket_total, 1)},
+    )
+    bill = calculate_bill(
+        pricing_show,
+        "Selected seats",
+        1,
+        show["festival_discount"],
+        show["member_percent"],
+        show["member_discount_cap"],
+        Decimal(str(show["convenience_fee"])) * len(seats),
+        show["gst_percent"],
+    )
+    tier_lines = [
+        {"name": name, "quantity": values["quantity"], "total": str(values["total"])}
+        for name, values in tier_totals.items()
+    ]
+    return bill, tier_lines
+
+
+def booking_bill_from_database(booking):
+    db = get_db()
+    seats = db.execute(
+        "SELECT t.name AS tier_name, i.price FROM booking_items i JOIN seats s ON s.id=i.seat_id JOIN ticket_tiers t ON t.id=s.tier_id WHERE i.booking_id=?",
+        (booking["id"],),
+    ).fetchall()
+    show = db.execute("SELECT * FROM shows WHERE id=?", (booking["show_id"],)).fetchone()
+    bill, tier_lines = calculate_selected_bill(show, seats)
+    return {"ticket_lines": tier_lines, "ticket_total": str(bill.ticket_total), "festival_discount": str(bill.festival_discount), "member_discount": str(bill.member_discount), "discounted_ticket_total": str(bill.discounted_ticket_total), "convenience_fee": str(bill.convenience_fee), "taxable_total": str(bill.taxable_total), "gst": str(bill.gst), "total": str(bill.total)}
 
 
 def create_token(db, table, column, user_id):

@@ -63,13 +63,35 @@ class WebFlowTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         payment_url = response.headers["Location"]
         payment_page = self.client.get(payment_url)
-        self.assertIn(b"Complete payment", payment_page.data)
+        self.assertIn(b"Review and pay", payment_page.data)
         booking_id = int(payment_url.rsplit("/", 1)[-1])
         self.client.get(f"/payment/{booking_id}/success")
         detail = self.client.get(f"/bookings/{booking_id}")
         self.assertIn(b"CONFIRMED", detail.data)
         self.client.post(f"/bookings/{booking_id}/cancel", data={"csrf_token": self.csrf()})
         self.assertIn(b"CANCELLED", self.client.get(f"/bookings/{booking_id}").data)
+
+    def test_mixed_tier_booking_shows_bill_breakup(self):
+        self.register_and_verify("mixed@example.com")
+        self.login("mixed@example.com")
+        response = self.client.post(
+            "/book",
+            data={
+                "csrf_token": self.csrf(),
+                "show_id": "1",
+                "seat_ids": [str(self._seat_id("S1")), str(self._seat_id("G1"))],
+                "passenger_name": "Mixed Customer",
+                "passenger_email": "mixed@example.com",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        payment_page = self.client.get(response.headers["Location"])
+        self.assertIn(b"Silver x 1", payment_page.data)
+        self.assertIn(b"Gold x 1", payment_page.data)
+        self.assertIn(b"Ticket subtotal", payment_page.data)
+        self.assertIn(b"Festival discount", payment_page.data)
+        self.assertIn(b"GST", payment_page.data)
+        self.assertIn(b"Rs. 273.76", payment_page.data)
 
     def test_same_seat_cannot_be_booked_twice(self):
         self.register_and_verify()
